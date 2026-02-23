@@ -28,6 +28,10 @@ type Trade = {
   slippage?: number;
 };
 
+function isFiniteNumber(x: any) {
+  return typeof x === "number" && Number.isFinite(x);
+}
+
 function buildBuyHoldEquity(data: OhlcRow[], initialCash: number) {
   if (!data.length) return [];
   const entry = data[0].close;
@@ -212,21 +216,90 @@ export function BacktestOverviewChart({
     });
 
     // Position shading (top panel)
+    // const intervals = buildPositionIntervals(trades);
+    // const shapes = intervals.map((iv) => ({
+    //   type: "rect",
+    //   xref: "x",
+    //   yref: "paper",
+    //   x0: iv.start,
+    //   x1: iv.end,
+    //   y0: 0.62,
+    //   y1: 1.0,
+    //   fillcolor: "rgba(0, 0, 0, 0.06)",
+    //   line: { width: 0 },
+    //   layer: "below",
+    // }));
+
+    // --- Warmup detection (first index where indicators are available) ---
+    const firstFastIdx = data.findIndex((d) => isFiniteNumber(d.sma_fast));
+    const firstSlowIdx = data.findIndex((d) => isFiniteNumber(d.sma_slow));
+
+    // Warmup ends when both are available; if one doesn't exist, fallback to the other; else no warmup shading
+    const warmupEndIdx =
+    firstFastIdx >= 0 && firstSlowIdx >= 0 ? Math.max(firstFastIdx, firstSlowIdx)
+    : firstSlowIdx >= 0 ? firstSlowIdx
+    : firstFastIdx >= 0 ? firstFastIdx
+    : -1;
+
+    const warmupStartTs = data.length ? data[0].timestamp : null;
+    const warmupEndTs = warmupEndIdx > 0 ? data[warmupEndIdx].timestamp : null;
+
+    // --- Shapes: include warmup shading + your existing position shading ---
     const intervals = buildPositionIntervals(trades);
-    const shapes = intervals.map((iv) => ({
-      type: "rect",
-      xref: "x",
-      yref: "paper",
-      x0: iv.start,
-      x1: iv.end,
-      y0: 0.62,
-      y1: 1.0,
-      fillcolor: "rgba(0, 0, 0, 0.06)",
-      line: { width: 0 },
-      layer: "below",
+
+    // Existing position shading
+    const positionShapes = intervals.map((iv) => ({
+    type: "rect",
+    xref: "x",
+    yref: "paper",
+    x0: iv.start,
+    x1: iv.end,
+    y0: 0.62,
+    y1: 1.0,
+    fillcolor: "rgba(0, 0, 0, 0.06)",
+    line: { width: 0 },
+    layer: "below",
     }));
 
-    return { traces, shapes };
+    // Warmup shading (only if we have an end timestamp)
+    const warmupShape =
+    warmupStartTs && warmupEndTs
+        ? [{
+            type: "rect",
+            xref: "x",
+            yref: "paper",
+            x0: warmupStartTs,
+            x1: warmupEndTs,
+            y0: 0.62,
+            y1: 1.0,
+            fillcolor: "rgba(0,0,0,0.035)",
+            line: { width: 0 },
+            layer: "below",
+        }]
+        : [];
+
+    // --- Annotation: small label on the candle panel ---
+    const annotations =
+    warmupStartTs && warmupEndTs
+        ? [{
+            xref: "x",
+            yref: "paper",
+            x: warmupEndTs,
+            y: 0.985,
+            xanchor: "right",
+            yanchor: "top",
+            text: "SMA lines begin after warmup",
+            showarrow: false,
+            font: { size: 11, color: "rgba(0,0,0,0.45)" },
+            bgcolor: "rgba(255,255,255,0.55)",
+            bordercolor: "rgba(0,0,0,0.08)",
+            borderwidth: 1,
+            borderpad: 3,
+        }]
+        : [];
+
+    const shapes = [...warmupShape, ...positionShapes];
+    return { traces, shapes, annotations };
   }, [data, trades, equityCurve, initialCash]);
 
   return (
@@ -241,6 +314,7 @@ export function BacktestOverviewChart({
           hovermode: "x unified",
           dragmode: "zoom",
           showlegend: true,
+          annotations: prepared.annotations,
           legend: { orientation: "h", y: 1.05 },
           margin: { t: 30, r: 40, l: 55, b: 40 },
 
