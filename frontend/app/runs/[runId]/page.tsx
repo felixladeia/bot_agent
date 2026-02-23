@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { formatDecisionTrace } from "@/lib/reasoning";
+import { EquityDrawdownChart } from "@/components/EquityDrawdownChart";
 
 function LineChart({ points }: { points: { t: string; equity: number }[] }) {
   const w = 860, h = 220, pad = 20;
@@ -62,17 +63,14 @@ export default function RunPage({ params }: { params: { runId: string } }) {
         </div>
       )}
 
-      {equity && (
-        <div style={{ padding: 12, border: "1px solid #ddd", borderRadius: 8 }}>
-            <h3>Equity curve</h3>
-            {Object.entries(equity).map(([sym, pts]: any) => (
-            <div key={sym} style={{ marginBottom: 16 }}>
-                <b>{sym}</b>
-                <LineChart points={pts} />
-            </div>
-            ))}
-        </div>
-        )}
+    {equity && (
+    <div style={{ display: "grid", gap: 12 }}>
+        <h3>Charts</h3>
+        {Object.entries(equity).map(([sym, pts]: any) => (
+        <EquityDrawdownChart key={sym} title={`${sym} · Equity & Drawdown`} series={pts} />
+        ))}
+    </div>
+    )}
 
       <div style={{ display: "grid", gap: 8 }}>
         <h3>Trades</h3>
