@@ -64,6 +64,9 @@ class YFinanceDataProvider:
         if missing:
             raise ValueError(f"Missing required columns: {missing}. Columns={list(df.columns)}")
 
+        print("Data fetched from yfinance:")
+        print(df.head(5))
+
         df = df[required].copy()
         df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
         df = df.dropna(subset=["timestamp"]).sort_values("timestamp").reset_index(drop=True)
@@ -73,5 +76,8 @@ class YFinanceDataProvider:
                 f"Data normalized to empty for {symbol} in {start_date}..{end_date} (interval={interval}). "
                 f"Columns after normalize ok, but timestamps invalid."
             )
+
+        print("Data cleaned from yfinance:")
+        print(df.head(5))
 
         return MarketData(df=df)

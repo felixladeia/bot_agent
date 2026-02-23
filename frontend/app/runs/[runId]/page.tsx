@@ -56,13 +56,6 @@ export default function RunPage({ params }: { params: { runId: string } }) {
       <h2>Run {params.runId}</h2>
       {msg && <pre style={{ whiteSpace: "pre-wrap" }}>{msg}</pre>}
 
-      {results && (
-        <div style={{ padding: 12, border: "1px solid #ddd", borderRadius: 8 }}>
-          <h3>Metrics</h3>
-          <pre style={{ whiteSpace: "pre-wrap" }}>{JSON.stringify(results.metrics, null, 2)}</pre>
-        </div>
-      )}
-
     {equity && (
     <div style={{ display: "grid", gap: 12 }}>
         <h3>Charts</h3>
@@ -93,6 +86,13 @@ export default function RunPage({ params }: { params: { runId: string } }) {
             <pre style={{ whiteSpace: "pre-wrap" }}>{JSON.stringify(explain, null, 2)}</pre>
         </div>
         )}
+
+    {results && (
+        <div style={{ padding: 12, border: "1px solid #ddd", borderRadius: 8 }}>
+          <h3>Metrics</h3>
+          <pre style={{ whiteSpace: "pre-wrap" }}>{JSON.stringify(results.metrics, null, 2)}</pre>
+        </div>
+      )}
     </div>
   );
 }

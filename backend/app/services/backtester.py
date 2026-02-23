@@ -1,5 +1,6 @@
 import json
 from dataclasses import dataclass
+import signal
 from typing import Dict, Any, List, Tuple
 import numpy as np
 import pandas as pd
@@ -38,6 +39,9 @@ def run_backtest_for_symbol(
     strat = get_strategy(strategy_name)
     df = strat.prepare(df, params)
 
+    print("* Data after strategy preparation:")
+    print(df[['timestamp','close','sma_fast','sma_slow']].tail(5))
+
     initial_cash = float(risk.get("initial_cash", 10_000))
     risk_fraction = float(risk.get("risk_fraction", 1.0))
     fee_bps = float(risk.get("fee_bps", 1.0))        # 1 bp = 0.01%
@@ -51,34 +55,75 @@ def run_backtest_for_symbol(
 
     state: Dict[str, Any] = {"position_qty": 0.0, "prev_sma_fast": None, "prev_sma_slow": None}
 
+    cross_up = 0
+    cross_down = 0
+
     for i, row in df.iterrows():
         price = float(row["close"])
         ts = str(pd.to_datetime(row["timestamp"]).isoformat())
 
-        # Decide
+        # # pull current values first
+        # cur_fast = row.get("sma_fast", None)
+        # cur_slow = row.get("sma_slow", None)
+
+        # Decide (keep as-is)
         signal = strat.decide(row, state, params)
 
-        # Update cross memory if present
-        if "sma_fast" in row and "sma_slow" in row:
-            try:
-                state["prev_sma_fast"] = None if pd.isna(row["sma_fast"]) else float(row["sma_fast"])
-                state["prev_sma_slow"] = None if pd.isna(row["sma_slow"]) else float(row["sma_slow"])
-            except Exception:
-                pass
+        if i % 50 == 0:
+            print(i, signal.action, state.get("prev_sma_fast"), state.get("prev_sma_slow"), row["sma_fast"], row["sma_slow"])
+
+        # Update SMA cross memory for next bar (SAFE)
+        sma_fast = row.get("sma_fast", None)
+        sma_slow = row.get("sma_slow", None)
+
+        state["prev_sma_fast"] = None if sma_fast is None or pd.isna(sma_fast) else float(sma_fast)
+        state["prev_sma_slow"] = None if sma_slow is None or pd.isna(sma_slow) else float(sma_slow)
 
         fee = 0.0
         slip = 0.0
         pnl = 0.0
 
-        if signal.action == "BUY" and qty <= 0:
-            alloc = (cash + qty * price) * risk_fraction
-            buy_qty = alloc / price if price > 0 else 0.0
+        action = (signal.action or "").upper().strip()
+        if signal.reason.get("crossed_up"): cross_up += 1
+        if signal.reason.get("crossed_down"): cross_down += 1
+
+        if action != "HOLD":
+            print("SIGNAL", i, action, ts, signal.reason)
+
+        # if action == "BUY" and qty <= 0:
+        #     alloc = (cash + qty * price) * risk_fraction
+        #     buy_qty = alloc / price if price > 0 else 0.0
+
+        #     slip = price * (slippage_bps / 10_000.0)
+        #     exec_price = price + slip
+        #     fee = (buy_qty * exec_price) * (fee_bps / 10_000.0)
+
+        #     cost = buy_qty * exec_price + fee
+        #     if cost <= cash and buy_qty > 0:
+        #         cash -= cost
+        #         qty += buy_qty
+        #         entry_price = exec_price
+
+        #         trades.append(TradeRecord(
+        #             symbol=symbol, timestamp=ts, side="BUY", qty=buy_qty, price=exec_price,
+        #             fee=fee, slippage=slip, pnl=0.0,
+        #             decision_trace={"action": "BUY", **signal.reason, "exec_price": exec_price, "fee": fee, "slippage": slip},
+        #         ))
+        if action == "BUY" and qty <= 0:
+            equity = cash + qty * price
+            alloc = equity * risk_fraction
 
             slip = price * (slippage_bps / 10_000.0)
             exec_price = price + slip
-            fee = (buy_qty * exec_price) * (fee_bps / 10_000.0)
 
+            fee_rate = (fee_bps / 10_000.0)  # e.g. 1bp = 0.0001
+
+            # Size so that (qty * exec_price) + fee fits inside alloc
+            buy_qty = (alloc / (exec_price * (1.0 + fee_rate))) if exec_price > 0 else 0.0
+
+            fee = (buy_qty * exec_price) * fee_rate
             cost = buy_qty * exec_price + fee
+
             if cost <= cash and buy_qty > 0:
                 cash -= cost
                 qty += buy_qty
@@ -90,7 +135,7 @@ def run_backtest_for_symbol(
                     decision_trace={"action": "BUY", **signal.reason, "exec_price": exec_price, "fee": fee, "slippage": slip},
                 ))
 
-        elif signal.action == "SELL" and qty > 0:
+        elif action == "SELL" and qty > 0:
             slip = price * (slippage_bps / 10_000.0)
             exec_price = price - slip
             fee = (qty * exec_price) * (fee_bps / 10_000.0)
@@ -116,6 +161,8 @@ def run_backtest_for_symbol(
         #equity_curve.append(equity)
         equity_curve.append({"t": ts, "equity": float(equity)})
         state["position_qty"] = qty
+
+    print("cross_up", cross_up, "cross_down", cross_down, "trades", len(trades))
 
     # total_return = (equity_curve[-1] / initial_cash - 1.0) if equity_curve else 0.0
     # metrics = {
