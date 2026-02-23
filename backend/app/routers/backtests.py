@@ -1,4 +1,7 @@
 import json
+import math
+import pandas as pd
+import numpy as np
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -9,8 +12,30 @@ from app.routers._deps import get_current_user
 from app.services.data_provider import CsvDataProvider
 from app.services.yfinance_provider import YFinanceDataProvider
 from app.services.backtester import run_backtest_for_symbol, aggregate_metrics
+from app.services.strategies import get_strategy
+
 
 router = APIRouter(prefix="/backtests", tags=["backtests"])
+
+
+def _json_safe(v):
+    # Convert numpy scalar to python scalar
+    if isinstance(v, (np.generic,)):
+        v = v.item()
+
+    # Replace NaN / Inf
+    if isinstance(v, float):
+        if math.isnan(v) or math.isinf(v):
+            return None
+
+    return v
+
+def _records_json_safe(records: list[dict]) -> list[dict]:
+    out = []
+    for r in records:
+        out.append({k: _json_safe(v) for k, v in r.items()})
+    return out
+
 
 @router.post("/run", response_model=BacktestRunOut)
 def run_backtest(config_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
@@ -128,4 +153,49 @@ def list_runs(db: Session = Depends(get_db), user=Depends(get_current_user)):
         })
     return out
 
-    
+@router.get("/{run_id}/ohlcv")
+def get_ohlcv_for_run(
+    run_id: int,
+    symbol: str,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    run = db.query(models.BacktestRun).filter(
+        models.BacktestRun.id == run_id,
+        models.BacktestRun.user_id == user.id
+    ).first()
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    cfg = db.query(models.Config).filter(models.Config.id == run.config_id).first()
+    if not cfg:
+        raise HTTPException(status_code=404, detail="Config not found")
+
+    provider = YFinanceDataProvider()
+    md = provider.get_ohlcv(symbol, cfg.start_date, cfg.end_date, interval=cfg.interval)
+
+    params = json.loads(cfg.params_json)
+    strat = get_strategy(cfg.strategy)
+    df = strat.prepare(md.df.copy(), params)
+
+    cols = ["timestamp", "open", "high", "low", "close"]
+    if "volume" in df.columns:
+        cols.append("volume")
+    for c in ["sma_fast", "sma_slow", "rsi"]:
+        if c in df.columns:
+            cols.append(c)
+
+    out = df[cols].copy()
+    out["timestamp"] = out["timestamp"].apply(lambda x: pd.to_datetime(x).isoformat())
+
+    records = out.to_dict(orient="records")
+    records = _records_json_safe(records)
+
+    return {"run_id": run.id, "symbol": symbol, "ohlcv": records}
+
+    # print("Prepared OHLCV data for run_id=", run_id, "symbol=", symbol)
+    # print(out.head(5))
+
+    # print({"run_id": run.id, "symbol": symbol, "ohlcv": out.to_dict(orient="records")})
+
+    # return {"run_id": run.id, "symbol": symbol, "ohlcv": out.to_dict(orient="records")}
