@@ -55,6 +55,15 @@ export default function DashboardPage() {
     })().catch((e) => setMsg(e.message));
   }, []);
 
+  async function runAgent(configId: number) {
+    try {
+        const r = await api.runAgent(configId);
+        window.location.href = `/agent-runs/${r.id}`;
+    } catch (e: any) {
+        setMsg(e.message);
+    }
+  }
+
   async function runAndPreview(configId: number) {
     setMsg("");
     setPreview(null);
@@ -149,6 +158,7 @@ export default function DashboardPage() {
                 >
                   {loadingConfigId === c.id ? "Running..." : "Run + preview"}
                 </button>
+                <button onClick={() => runAgent(c.id)}>Run agent</button>
               </div>
             </div>
           ))

@@ -91,6 +91,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <NavLink href="/dashboard" label="Dashboard" />
               <NavLink href="/runs" label="Runs" />
               <NavLink href="/configs" label="Configs" />
+              <NavLink href="/agent-runs" label="Agent Runs" />
               {me?.is_admin && <NavLink href="/admin/users" label="Admin" />}
 
               <div style={{ width: 1, height: 22, background: "#e5e7eb", margin: "0 6px" }} />

@@ -2,6 +2,21 @@ from pydantic import BaseModel, EmailStr, Field
 from typing import Any, Dict, List, Optional
 from datetime import datetime
 
+class AgentRunOut(BaseModel):
+    id: int
+    status: str
+    config_id: int
+    output: Optional[Dict[str, Any]] = None
+
+class AgentRunDetailOut(BaseModel):
+    id: int
+    status: str
+    config_id: int
+    input: Dict[str, Any]
+    output: Optional[Dict[str, Any]] = None
+    trace: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+
 class RegisterIn(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8)
